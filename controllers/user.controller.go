@@ -30,9 +30,12 @@ func NewLoginGetToken(c *fiber.Ctx) error {
 		input Input
 		err   error
 	)
+	fmt.Println("ok")
 	if err := c.BodyParser(&input); err != nil {
 		return c.JSON(fiber.Map{"status": false, "message": "Review your input", "error": err.Error()})
 	}
+	fmt.Println(input.Email)
+	fmt.Println(input.Password)
 	var loginInfo repo.LoginInfo
 	if err = loginInfo.First("email = ? OR phone = ? OR username = ?",
 		[]interface{}{input.Email, input.Email, input.Email}, "Student", "User"); err != nil {
@@ -40,7 +43,7 @@ func NewLoginGetToken(c *fiber.Ctx) error {
 		return ResponseError(c, fiber.StatusInternalServerError,
 			fmt.Sprintf("%s: %s", consts.GetFailed, err.Error()), consts.GetFailed)
 	}
-
+	fmt.Println(loginInfo.PasswordHash)
 	if err = bcrypt.CompareHashAndPassword([]byte(loginInfo.PasswordHash), []byte(input.Password)); err != nil {
 		return c.JSON(fiber.Map{"status": false, "message": "Review your input password", "error": err, "user": nil})
 	}
@@ -81,23 +84,28 @@ func NewLoginGetToken(c *fiber.Ctx) error {
 	} else if loginInfo.User.Position == consts.Teacher {
 		roleData = "teacher"
 	}
+
+	// Add PermissionGrpId to the response
+	var permissionGrpId *uuid.UUID
+	if loginInfo.RoleId != consts.Student {
+		permissionGrpId = loginInfo.User.PermissionGrpId
+	}
+
 	claims_new := jwt.MapClaims{
 		"user_id": loginInfo.ID,
 		"role_id": loginInfo.RoleId,
 		"site_id": loginInfo.CenterID,
-		//"sso_id":  &loginInfo.SsoID,
-		"role":   roleData,
-		"status": true,
-		"exp":    time.Now().Add(time.Hour * 200).Unix(),
+		"role":    roleData,
+		"status":  true,
+		"exp":     time.Now().Add(time.Hour * 200).Unix(),
 	}
 	claims_refresh := jwt.MapClaims{
 		"user_id": loginInfo.ID,
 		"role_id": loginInfo.RoleId,
 		"site_id": loginInfo.CenterID,
 		"role":    roleData,
-		//"sso_id":  &loginInfo.SsoID,
-		"status": true,
-		"exp":    time.Now().Add(time.Hour * 168).Unix(),
+		"status":  true,
+		"exp":     time.Now().Add(time.Hour * 168).Unix(),
 	}
 	token_new := jwt.NewWithClaims(jwt.SigningMethodHS256, claims_new)
 	t, errs := token_new.SignedString([]byte(app.Config("SECRET_KEY")))
@@ -109,16 +117,21 @@ func NewLoginGetToken(c *fiber.Ctx) error {
 	if errs1 != nil {
 		return c.JSON(fiber.Map{"status": false, "message": "Token generation failed", "error": errs1.Error(), "user": nil})
 	}
-	userReturn := models.DataUserReturn{
-		ID:           loginInfo.ID,
-		RoleId:       loginInfo.RoleId,
-		Email:        loginInfo.Email,
-		Phone:        loginInfo.Phone,
-		Token:        t,
-		RefreshToken: refresh_token,
-	}
-	return ResponseSuccess(c, fiber.StatusOK, "Login success", userReturn)
 
+	// Add FullName and Avatar to the response
+	userReturn := models.DataUserReturn{
+		ID:              loginInfo.ID,
+		RoleId:          loginInfo.RoleId,
+		Email:           loginInfo.Email,
+		Phone:           loginInfo.Phone,
+		Token:           t,
+		RefreshToken:    refresh_token,
+		PermissionGrpId: permissionGrpId,         // Add PermissionGrpId
+		FullName:        loginInfo.User.FullName, // Add FullName
+		Avatar:          loginInfo.User.Avatar,   // Add Avatar
+	}
+
+	return ResponseSuccess(c, fiber.StatusOK, "Login success", userReturn)
 }
 
 func VerifyEmailOTP(c *fiber.Ctx) error {
@@ -311,7 +324,6 @@ func Register(c *fiber.Ctx) error {
 }
 
 func ResendOTP(c *fiber.Ctx) error {
-	fmt.Println("ok")
 	type EmailInput struct {
 		Email string `json:"email"`
 	}
@@ -486,7 +498,7 @@ func ListUsers(c *fiber.Ctx) error {
 		}
 	}
 	if c.Query("active") != "" {
-		isActive, _ := strconv.ParseBool(c.Query("active")) //Chuyển giá trị active từ chuỗi ("true"/dashboard"false") thành bool (true/false).
+		isActive, _ := strconv.ParseBool(c.Query("active")) //Chuyển giá trị active từ chuỗi ("true"/"false") thành bool (true/false).
 		DB = DB.Where("is_active = ?", isActive)
 	}
 	if c.Query("position") != "" {

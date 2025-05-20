@@ -46,10 +46,10 @@ func (cg *DatabaseConfig) Setup() {
 		mysql.New(mysql.Config{
 			DSN:               mainDbDNS,
 			DefaultStringSize: 256, // default size for string fields
-			// DisableDatetimePrecision:  true,  // disable datetime precision, which not supported before MySQL 5.6
-			// DontSupportRenameIndex:    true,  // drop & create when rename index, rename index not supported before MySQL 5.7, MariaDB
-			// DontSupportRenameColumn:   true,  // `change` when rename column, rename column not supported before MySQL 8, MariaDB
-			// SkipInitializeWithVersion: false, // auto configure based on currently MySQL version
+			//DisableDatetimePrecision:  true,  // disable datetime precision, which not supported before MySQL 5.6
+			//DontSupportRenameIndex:    true,  // drop & create when rename index, rename index not supported before MySQL 5.7, MariaDB
+			//DontSupportRenameColumn:   true,  // `change` when rename column, rename column not supported before MySQL 8, MariaDB
+			//SkipInitializeWithVersion: false, // auto configure based on currently MySQL version
 		}),
 		&gorm.Config{
 			PrepareStmt:                              true,
@@ -79,6 +79,7 @@ func (cg *DatabaseConfig) Setup() {
 }
 
 func MigrateDatabase(DB *gorm.DB) error {
+	return DB.AutoMigrate(&models.User{}, &models.LoginInfo{}, &models.User{}, &models.OrganStruct{}, &models.Branch{}, &models.Certificate{}, &models.Student{}, &models.Province{}, &models.Ward{}, &models.SessionAttendance{}, &models.Category{}, &models.Class{}, &models.StudyProgress{}, &models.StudentClasses{}, &models.Holiday{}, &models.Classroom{}, &models.ContactChannel{}, &models.Curriculum{}, &models.CustomerSource{}, &models.District{}, &models.EnrollmentPlan{}, &models.Lesson{}, &models.LessonData{}, &models.RoomSchedule{}, &models.ScheduleClass{}, &models.Shift{}, &models.StudentCertificates{}, &models.StudentLog{}, &models.ExamResult{}, &models.TestService{}, &models.Subject{}, &models.TimeSlot{}, &models.WorkSession{}, &models.SalaryStatement{}, &models.CareAssignment{}, &models.TuitionFeePkgCf{}, &models.OTPLog{}, &models.Permission{}, &models.PermissionTag{}, &models.PermissionGroup{}, &models.SalaryHistory{}, &models.DocsCategory{}, &models.TeachingSchedule{}, &models.Notification{}, &models.SupportRequest{}, &models.Document{}, &models.StudentSession{}, &models.ClassHoliday{}, &models.ScheduleHoliday{})
 	if err := DB.AutoMigrate(&models.Center{}); err != nil {
 		logrus.Debug(err)
 	}
@@ -119,6 +120,9 @@ func MigrateDatabase(DB *gorm.DB) error {
 		logrus.Debug(err)
 	}
 	if err := DB.AutoMigrate(&models.StudentClasses{}); err != nil {
+		logrus.Debug(err)
+	}
+	if err := DB.AutoMigrate(&models.Holiday{}); err != nil {
 		logrus.Debug(err)
 	}
 	if err := DB.AutoMigrate(&models.Classroom{}); err != nil {
@@ -212,6 +216,18 @@ func MigrateDatabase(DB *gorm.DB) error {
 		logrus.Debug(err)
 	}
 	if err := DB.AutoMigrate(&models.SupportRequest{}); err != nil {
+		logrus.Debug(err)
+	}
+	if err := DB.AutoMigrate(&models.Document{}); err != nil {
+		logrus.Debug(err)
+	}
+	if err := DB.AutoMigrate(&models.StudentSession{}); err != nil {
+		logrus.Debug(err)
+	}
+	if err := DB.AutoMigrate(&models.ClassHoliday{}); err != nil {
+		logrus.Debug(err)
+	}
+	if err := DB.AutoMigrate(&models.ScheduleHoliday{}); err != nil {
 		logrus.Debug(err)
 	}
 

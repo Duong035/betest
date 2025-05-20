@@ -27,10 +27,10 @@ func (log *LoggingConfig) Setup() {
 			package_name := f.Func.Name()
 			spliter_1 := strings.Split(package_name, ".")
 			if len(spliter_1) > 0 {
-				spliter_2 := strings.Split(spliter_1[0], "/dashboard")
+				spliter_2 := strings.Split(spliter_1[0], "/")
 				if len(spliter_2) > 1 {
 					paths := spliter_2[1:]
-					fullpath := strings.Join(paths, "/dashboard")
+					fullpath := strings.Join(paths, "/")
 					return fmt.Sprintf("%s/%s:%d", fullpath, filename, f.Line), fmt.Sprintf("%s()", f.Function)
 				}
 			}

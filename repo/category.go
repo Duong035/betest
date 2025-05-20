@@ -21,12 +21,7 @@ func GetCategoryByNameAndCenterId(name string, centerId uuid.UUID) (models.Categ
 
 func GetCategoryByIdAndCenterId(id uuid.UUID, centerId uuid.UUID) (models.Category, error) {
 	var category models.Category
-	query := app.Database.DB.
-		Preload("Created", func(db *gorm.DB) *gorm.DB {
-			return db.Select("id", "full_name")
-		}).
-		Where("id = ? AND center_id = ?", id, centerId).
-		First(&category)
+	query := app.Database.DB.Where("id = ? AND center_id = ?", id, centerId).First(&category)
 	return category, query.Error
 }
 

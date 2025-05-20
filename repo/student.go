@@ -2,12 +2,15 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"intern_247/app"
 	"intern_247/consts"
 	"intern_247/models"
 	"intern_247/utils"
+	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
@@ -232,4 +235,177 @@ func (u *Student) Delete(studentIds []uuid.UUID) (err error) {
 
 		return nil
 	})
+}
+func GetStudentsBySubjectAndCenterId(subjectId, centerId uuid.UUID) ([]models.Student, error) {
+	var students []models.Student
+	db := app.Database.DB.Model(&models.Student{}).Select("students.`id`", "ss.*").Where("center_id = ?", centerId)
+	db.Joins("INNER JOIN student_subjects as ss ON students.`id` = ss.`student_id`")
+	db.Where("ss.`subject_id` = ?", subjectId)
+	db.Find(&students)
+	return students, db.Error
+}
+
+func CheckStudentExists(studentID uuid.UUID) error {
+	var student Student
+	if err := app.Database.DB.Where("id = ?", studentID).First(&student).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// func AddStudentToClass(input []models.StudentToClass, token TokenData, c *fiber.Ctx) error {
+// 	tx := app.Database.DB.Begin()
+// 	defer func() {
+// 		if r := recover(); r != nil {
+// 			tx.Rollback()
+// 		}
+// 	}()
+// 	var err error
+// 	for _, dataInput := range input {
+// 		var class models.Class
+// 		if err := tx.Model(&models.Class{}).Where("id = ? AND center_id = ?", dataInput.ClassId, token.CenterId).First(&class).Error; err != nil {
+// 			tx.Rollback()
+// 			return err
+// 		}
+// 		if class.Status == consts.CLASS_CANCELED {
+// 			tx.Rollback()
+// 			return errors.New("class is canceled")
+// 		}
+// 		var student models.Student
+// 		if err := tx.Model(&models.Student{}).Where("id = ?", dataInput.StudentId).First(&student).Error; err != nil {
+// 			tx.Rollback()
+// 			return err
+// 		}
+// 		now := time.Now()
+// 		studentClassInfo := models.StudentClasses{
+// 			ClassId:   class.ID,
+// 			StudentId: student.ID,
+// 			CreatedAt: &now,
+// 		}
+// 		if err := tx.Model(&models.StudentClasses{}).Create(&studentClassInfo).Error; err != nil {
+// 			logrus.Error(err)
+// 			tx.Rollback()
+// 			return err
+// 		}
+// 		if student.Status, err = LoadStatusTransaction(tx, student.ID, token.CenterId); err != nil {
+// 			logrus.Error(err)
+// 			tx.Rollback()
+// 			return err
+// 		}
+// 	}
+// 	return tx.Commit().Error
+// }
+
+func AddStudentToClass(input models.AddStudentsToClassInput, token TokenData, c *fiber.Ctx) error {
+	tx := app.Database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+	var err error
+	var class models.Class
+	if err := tx.Model(&models.Class{}).Where("id = ? AND center_id = ?", input.ClassId, token.CenterId).First(&class).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	if class.Status == consts.CLASS_CANCELED {
+		tx.Rollback()
+		return errors.New("class is canceled")
+	}
+	for _, studentId := range input.StudentId {
+		var student models.Student
+		if err := tx.Model(&models.Student{}).Where("id = ?", studentId).First(&student).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		now := time.Now()
+		studentClassInfo := models.StudentClasses{
+			ClassId:   class.ID,
+			StudentId: student.ID,
+			CreatedAt: &now,
+		}
+		if err := tx.Model(&models.StudentClasses{}).Create(&studentClassInfo).Error; err != nil {
+			logrus.Error(err)
+			tx.Rollback()
+			return err
+		}
+		if student.Status, err = LoadStatusTransaction(tx, student.ID, token.CenterId); err != nil {
+			logrus.Error(err)
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit().Error
+}
+
+func LoadStatusTransaction(tx *gorm.DB, studentId, centerId uuid.UUID) (status int64, err error) {
+	var (
+		ctx, cancel = context.WithTimeout(context.Background(), app.CTimeOut)
+		count       int64
+	)
+	defer cancel()
+
+	if err = tx.WithContext(ctx).Raw(`--
+    SELECT COUNT(*) FROM (
+        SELECT s.code FROM student_subjects
+        JOIN subjects s ON s.id = subject_id AND s.deleted_at IS NULL AND s.center_id = ?
+        WHERE student_id = ?
+        UNION
+        SELECT t1.code FROM student_curriculums sc
+        JOIN (
+            SELECT cs.curriculum_id, s.code FROM curriculum_subjects cs
+            JOIN subjects s ON s.id = cs.subject_id AND s.deleted_at IS NULL AND s.center_id = ?
+        ) t1 ON t1.curriculum_id = sc.curriculum_id
+        WHERE student_id = ?) temp`, centerId, studentId, centerId, studentId).Scan(&count).Error; err != nil {
+		logrus.Error(err)
+		return 0, err
+	}
+	if count == 0 {
+		return consts.Pending, nil
+	}
+
+	if err = tx.WithContext(ctx).Raw(`--
+    SELECT COUNT(*) FROM (
+        SELECT s.code FROM student_subjects
+        JOIN subjects s ON s.id = subject_id AND s.deleted_at IS NULL AND s.center_id = ?
+        WHERE student_id = ?
+        UNION
+        SELECT t1.code FROM student_curriculums sc
+        JOIN (
+            SELECT cs.curriculum_id, s.code FROM curriculum_subjects cs
+            JOIN subjects s ON s.id = cs.subject_id AND s.deleted_at IS NULL AND s.center_id = ?
+        ) t1 ON t1.curriculum_id = sc.curriculum_id
+        WHERE student_id = ?
+    ) s
+    LEFT JOIN (
+        SELECT c.subject_code FROM student_classes sc
+        JOIN (
+            SELECT c.id, s.code subject_code FROM classes c
+            JOIN subjects s ON s.id = c.subject_id AND s.deleted_at IS NULL AND s.center_id = ?
+            WHERE c.deleted_at IS NULL
+        ) c ON c.id = sc.class_id
+        WHERE student_id = ?
+    ) c ON c.subject_code = s.code
+    WHERE c.subject_code IS NULL
+    `, centerId, studentId, centerId, studentId, centerId, studentId).Scan(&count).Error; err != nil {
+		logrus.Error(err)
+		return 0, err
+	}
+	if count > 0 {
+		return consts.Pending, nil
+	}
+
+	if err = tx.WithContext(ctx).Raw(`--
+    SELECT COUNT(*) FROM student_classes sc
+    JOIN classes c ON c.id = class_id AND c.deleted_at IS NULL AND c.center_id = ?
+    WHERE student_id = ? AND sc.status IS NULL`, centerId, studentId).Scan(&count).Error; err != nil {
+		logrus.Error(err)
+		return 0, err
+	}
+	if count == 0 {
+		return consts.Reserved, nil
+	}
+
+	return consts.Studying, nil
 }
